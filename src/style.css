@@ -1,0 +1,89 @@
+/* S1: desktop Chrome, fixed 800x800 board. S3 makes this responsive. */
+:root {
+  color-scheme: dark;
+  --ink: #f4f2ec;
+  --panel: #191c20;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: #0e1013;
+  color: var(--ink);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  touch-action: manipulation;
+  user-select: none;
+}
+
+#app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+}
+
+#stage canvas {
+  display: block;
+}
+
+#hud {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  width: 800px;
+  padding: 12px 16px;
+  background: var(--panel);
+  border-radius: 8px;
+}
+
+.scores {
+  display: flex;
+  gap: 20px;
+}
+
+.score {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 20px;
+}
+
+.disc {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.disc.black {
+  background: #14171a;
+  border: 1px solid #3a3f45;
+}
+
+.disc.white {
+  background: #f4f2ec;
+}
+
+.status {
+  flex: 1;
+  margin: 0;
+  color: #b9c0c7;
+}
+
+button {
+  font: inherit;
+  color: var(--ink);
+  background: #2a2f36;
+  border: 1px solid #3a3f45;
+  border-radius: 6px;
+  padding: 8px 16px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #343a42;
+}
