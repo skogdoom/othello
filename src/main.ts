@@ -3,7 +3,7 @@ import { findMove } from './ai/index.js';
 import { BoardRenderer } from './render/board.js';
 import { THEME } from './render/theme.js';
 import { Hud } from './ui/hud.js';
-import { SilentAudio } from './audio/index.js';
+import { WebAudioPlayer } from './audio/index.js';
 import { createMachine } from './machine.js';
 import type { Machine } from './machine.js';
 import type { ClockPort, SearchPort, StoragePort } from './ports.js';
@@ -58,15 +58,21 @@ const storage: StoragePort = {
   load: () => null,
 };
 
+const audio = new WebAudioPlayer();
+// iOS only starts an audio context inside a user gesture, and the gesture that
+// starts the game is the first tap on the board.
+globalThis.addEventListener('pointerdown', () => audio.unlock(), { capture: true });
+
 let machine: Machine;
 const renderer = new BoardRenderer(app, (square) => machine.tap(square));
-const hud = new Hud(hudRoot, () => machine.restart());
-machine = createMachine({
-  renderer,
-  hud,
-  audio: new SilentAudio(),
-  search,
-  clock,
-  storage,
+const hud = new Hud(hudRoot, {
+  onRestart: () => machine.restart(),
+  onToggleMute: () => audio.setMuted(!audio.isMuted()),
+  isMuted: () => audio.isMuted(),
 });
+machine = createMachine({ renderer, hud, audio, search, clock, storage });
 machine.start();
+
+// Decoding happens after the first frame: a missing clip must not hold up the
+// board, and every sound falls back to a placeholder on its own.
+void audio.load();

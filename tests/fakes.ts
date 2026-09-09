@@ -97,8 +97,10 @@ export class FakeHud implements HudPort {
 
 export class FakeAudio implements AudioPort {
   played: SoundName[] = [];
-  play(sound: SoundName): void {
+  calls: { sound: SoundName; flipped: number }[] = [];
+  play(sound: SoundName, flipped = 0): void {
     this.played.push(sound);
+    this.calls.push({ sound, flipped });
   }
 }
 

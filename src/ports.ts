@@ -35,7 +35,8 @@ export interface HudPort {
 }
 
 export interface AudioPort {
-  play(sound: SoundName): void;
+  /** `flipped` is how many discs the move turned; it shapes the flip sound. */
+  play(sound: SoundName, flipped?: number): void;
 }
 
 export interface SearchPort {
