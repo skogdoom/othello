@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "serve": "node scripts/esbuild-serve.mjs",
+    "bundle": "node scripts/esbuild-serve.mjs --build",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -14,6 +16,7 @@
     "pixi.js": "^8.20.1"
   },
   "devDependencies": {
+    "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vitest": "^5.0.0"
