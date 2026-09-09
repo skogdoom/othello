@@ -1,26 +1,38 @@
-import { Application, Container, Graphics, Rectangle } from 'pixi.js';
-import { BLACK, EMPTY, colOf, rowOf } from '../core/types.js';
+import { Container, Graphics, Rectangle } from 'pixi.js';
+import { BLACK, EMPTY, colOf, opponent, rowOf } from '../core/types.js';
 import { get } from '../core/board.js';
 import { CELL, THEME } from './theme.js';
-import type { FederatedPointerEvent } from 'pixi.js';
+import { TIMING } from './timing.js';
+import { Tweens, easeInOutQuad } from './tween.js';
+import type { Application, FederatedPointerEvent } from 'pixi.js';
 import type { Position } from '../core/game.js';
-import type { Square } from '../core/types.js';
+import type { Cell, Square } from '../core/types.js';
 import type { AnimatedMove, RendererPort } from '../ports.js';
 
 const centre = (index: number): number => THEME.margin + index * CELL + CELL / 2;
 
-/**
- * S1 renderer: a full redraw per position change, no animation. S2 replaces
- * `animateMove` with the flip cascade; nothing above this file changes.
- */
+const chebyshev = (a: Square, b: Square): number =>
+  Math.max(Math.abs(rowOf(a) - rowOf(b)), Math.abs(colOf(a) - colOf(b)));
+
+/** Overshoots slightly at the end, so a placed disc lands rather than arrives. */
+const easeOutBack = (t: number): number => {
+  const c = 1.2;
+  const u = t - 1;
+  return 1 + (c + 1) * u * u * u + c * u * u;
+};
+
 export class BoardRenderer implements RendererPort {
   private readonly grid = new Graphics();
-  private readonly discs = new Graphics();
+  private readonly discLayer = new Container();
   private readonly hintLayer = new Graphics();
   private readonly ring = new Graphics();
   private readonly board = new Container();
+  private readonly tweens: Tweens;
 
-  private position: Position | null = null;
+  /** One Graphics per occupied square, so flips can be scaled individually. */
+  private readonly discs: (Graphics | null)[] = new Array(64).fill(null);
+  private readonly colours: Cell[] = new Array(64).fill(EMPTY);
+
   private hints: readonly Square[] = [];
   private lastMove: Square | null = null;
   private inputEnabled = false;
@@ -29,7 +41,8 @@ export class BoardRenderer implements RendererPort {
     private readonly app: Application,
     private readonly onTap: (square: Square) => void,
   ) {
-    this.board.addChild(this.grid, this.discs, this.hintLayer, this.ring);
+    this.tweens = new Tweens(app.ticker);
+    this.board.addChild(this.grid, this.discLayer, this.hintLayer, this.ring);
     this.board.eventMode = 'static';
     this.board.hitArea = new Rectangle(0, 0, THEME.boardSize, THEME.boardSize);
     this.board.on('pointertap', this.handleTap);
@@ -63,20 +76,106 @@ export class BoardRenderer implements RendererPort {
     this.grid.stroke({ width: THEME.gridWidth, color: THEME.gridLine });
   }
 
-  render(pos: Position, lastMove: Square | null): void {
-    this.position = pos;
-    this.lastMove = lastMove;
-    this.redraw();
+  private paint(square: Square, cell: Cell): void {
+    const disc = this.discs[square];
+    if (!disc || cell === EMPTY) return;
+    this.colours[square] = cell;
+    disc
+      .clear()
+      .circle(0, 0, CELL * THEME.discRadius)
+      .fill(cell === BLACK ? THEME.black : THEME.white)
+      .stroke({ width: 1, color: THEME.discEdge, alpha: THEME.discEdgeAlpha });
   }
 
-  animateMove(_move: AnimatedMove, done: () => void): void {
-    // S1 has no animation: the position is already drawn, so the resolving
-    // phase is over as soon as it begins.
-    done();
+  private addDisc(square: Square, cell: Cell): Graphics {
+    const disc = new Graphics();
+    disc.position.set(centre(colOf(square)), centre(rowOf(square)));
+    this.discLayer.addChild(disc);
+    this.discs[square] = disc;
+    this.paint(square, cell);
+    return disc;
+  }
+
+  private removeDisc(square: Square): void {
+    const disc = this.discs[square];
+    if (!disc) return;
+    this.discLayer.removeChild(disc);
+    disc.destroy();
+    this.discs[square] = null;
+    this.colours[square] = EMPTY;
+  }
+
+  /** Brings the disc views in line with the position. */
+  render(pos: Position, lastMove: Square | null): void {
+    this.lastMove = lastMove;
+    // A redraw can land mid-move: `enter` renders the new position and only
+    // then starts its animation, and a difficulty change redraws while the
+    // AI's flip is still running. Leave the scale to whichever tween owns it
+    // — every tween ends at 1, snapped or not — and only reconcile colours.
+    const animating = this.tweens.busy;
+
+    for (let s = 0; s < 64; s++) {
+      const cell = get(pos.board, s);
+      if (cell === EMPTY) {
+        this.removeDisc(s);
+        continue;
+      }
+      const disc = this.discs[s] ?? this.addDisc(s, cell);
+      if (!animating) disc.scale.set(1);
+      if (this.colours[s] !== cell) this.paint(s, cell);
+    }
+    this.drawHints();
+    this.drawRing();
+  }
+
+  /**
+   * `render` has already drawn the position this move produced, so the
+   * animation rewinds the squares it touched and plays them forward: the
+   * placed disc from nothing, the flipped discs from the opponent's colour.
+   */
+  animateMove(move: AnimatedMove, done: () => void): void {
+    const { player, placed, flipped } = move;
+    const was = opponent(player);
+
+    let outstanding = 1 + flipped.length;
+    const settleOne = (): void => {
+      if (--outstanding === 0) done();
+    };
+
+    const placedDisc = this.discs[placed] ?? this.addDisc(placed, player);
+    placedDisc.scale.set(0);
+    this.tweens.add({
+      duration: TIMING.PLACE_MS,
+      onUpdate: (t) => placedDisc.scale.set(easeOutBack(t)),
+      onComplete: settleOne,
+    });
+
+    for (const square of flipped) {
+      const disc = this.discs[square];
+      if (!disc) {
+        settleOne();
+        continue;
+      }
+      this.paint(square, was);
+      disc.scale.set(1);
+
+      this.tweens.add({
+        duration: TIMING.FLIP_MS,
+        delay: TIMING.FLIP_DELAY + chebyshev(placed, square) * TIMING.FLIP_CASCADE_STEP,
+        onUpdate: (t) => {
+          const eased = easeInOutQuad(t);
+          // Squash to nothing at the halfway point and swap colour there.
+          disc.scale.x = Math.abs(1 - 2 * eased);
+          const wanted = eased < 0.5 ? was : player;
+          if (this.colours[square] !== wanted) this.paint(square, wanted);
+        },
+        onComplete: settleOne,
+      });
+    }
   }
 
   snapAnimationsToEnd(): void {
-    // Nothing is in flight until S2.
+    this.tweens.finishAll();
   }
 
   setInputEnabled(enabled: boolean): void {
@@ -86,44 +185,27 @@ export class BoardRenderer implements RendererPort {
 
   setHints(squares: readonly Square[]): void {
     this.hints = squares;
-    this.redraw();
+    this.drawHints();
   }
 
-  private redraw(): void {
-    const pos = this.position;
-    this.discs.clear();
+  private drawHints(): void {
     this.hintLayer.clear();
-    this.ring.clear();
-    if (!pos) return;
-
-    const radius = CELL * THEME.discRadius;
-    for (let s = 0; s < 64; s++) {
-      const cell = get(pos.board, s);
-      if (cell === EMPTY) continue;
-      this.discs
-        .circle(centre(colOf(s)), centre(rowOf(s)), radius)
-        .fill(cell === BLACK ? THEME.black : THEME.white)
-        .stroke({
-          width: 1,
-          color: THEME.discEdge,
-          alpha: THEME.discEdgeAlpha,
-        });
-    }
-
     for (const s of this.hints) {
       this.hintLayer
         .circle(centre(colOf(s)), centre(rowOf(s)), CELL * THEME.hintRadius)
         .fill({ color: THEME.hint, alpha: THEME.hintAlpha });
     }
+  }
 
-    if (this.lastMove !== null) {
-      this.ring
-        .circle(
-          centre(colOf(this.lastMove)),
-          centre(rowOf(this.lastMove)),
-          CELL * THEME.ringRadius,
-        )
-        .stroke({ width: THEME.ringWidth, color: THEME.ring });
-    }
+  private drawRing(): void {
+    this.ring.clear();
+    if (this.lastMove === null) return;
+    this.ring
+      .circle(
+        centre(colOf(this.lastMove)),
+        centre(rowOf(this.lastMove)),
+        CELL * THEME.ringRadius,
+      )
+      .stroke({ width: THEME.ringWidth, color: THEME.ring });
   }
 }

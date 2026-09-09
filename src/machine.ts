@@ -185,8 +185,9 @@ export function createMachine(deps: MachineDeps): Machine {
     }
     onBarrierDone = () => route(mover, passes);
 
+    // One place and one flip per move, never one flip per disc.
     audio.play('place');
-    if (result.flipped.length > 0) audio.play('flip');
+    if (result.flipped.length > 0) audio.play('flip', result.flipped.length);
     enter(resolving);
 
     if (searchHere) {
