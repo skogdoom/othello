@@ -1,29 +1,55 @@
-/* S1: desktop Chrome, fixed 800x800 board. S3 makes this responsive. */
+/*
+ * One DOM tree, two flex directions: the HUD is a bottom bar in portrait and a
+ * right sidebar in landscape. `min-aspect-ratio`, not `orientation`, so a
+ * narrow desktop window gets the portrait layout too.
+ */
 :root {
   color-scheme: dark;
   --ink: #f4f2ec;
+  --dim: #b9c0c7;
   --panel: #191c20;
+  --panel-edge: #3a3f45;
+  --button: #2a2f36;
+  --page: #0e1013;
+  --gap: 12px;
 }
 
 * {
   box-sizing: border-box;
 }
 
+html,
+body {
+  height: 100%;
+}
+
 body {
   margin: 0;
-  background: #0e1013;
+  background: var(--page);
   color: var(--ink);
   font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* No double-tap zoom, no text selection dragging off a tapped disc. */
   touch-action: manipulation;
   user-select: none;
+  -webkit-user-select: none;
+  overscroll-behavior: none;
 }
 
 #app {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  gap: 16px;
-  padding: 16px;
+  height: 100dvh;
+}
+
+#stage {
+  position: relative;
+  flex: 1 1 auto;
+  /* Flex items refuse to shrink past their content without this. */
+  min-width: 0;
+  min-height: 0;
+  /* The canvas is sized from the observed box; never let it feed back. */
+  overflow: hidden;
+  padding-top: env(safe-area-inset-top);
 }
 
 #stage canvas {
@@ -31,18 +57,20 @@ body {
 }
 
 #hud {
+  flex: 0 0 auto;
   display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 24px;
-  width: 800px;
-  padding: 12px 16px;
+  gap: 8px var(--gap);
+  padding: var(--gap);
+  padding-bottom: calc(var(--gap) + env(safe-area-inset-bottom));
   background: var(--panel);
-  border-radius: 8px;
 }
 
 .scores {
   display: flex;
-  gap: 20px;
+  gap: var(--gap);
 }
 
 .score {
@@ -50,6 +78,7 @@ body {
   align-items: center;
   gap: 8px;
   font-size: 20px;
+  font-variant-numeric: tabular-nums;
 }
 
 .disc {
@@ -57,11 +86,12 @@ body {
   height: 18px;
   border-radius: 50%;
   display: inline-block;
+  flex: 0 0 auto;
 }
 
 .disc.black {
   background: #14171a;
-  border: 1px solid #3a3f45;
+  border: 1px solid var(--panel-edge);
 }
 
 .disc.white {
@@ -69,21 +99,115 @@ body {
 }
 
 .status {
-  flex: 1;
+  flex: 1 1 140px;
   margin: 0;
-  color: #b9c0c7;
+  color: var(--dim);
+}
+
+.controls {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
 }
 
 button {
   font: inherit;
   color: var(--ink);
-  background: #2a2f36;
-  border: 1px solid #3a3f45;
+  background: var(--button);
+  border: 1px solid var(--panel-edge);
   border-radius: 6px;
-  padding: 8px 16px;
+  /* 44px is the smallest comfortable tap target on a phone. */
+  min-height: 44px;
+  padding: 10px 16px;
   cursor: pointer;
 }
 
 button:hover {
   background: #343a42;
+}
+
+button:active {
+  background: #3d444d;
+}
+
+/*
+ * Landscape: the board is height-constrained, so a sidebar HUD costs no board
+ * size at all. That is the whole reason for the split — do not flatten it back
+ * to a bottom bar.
+ */
+@media (min-aspect-ratio: 1/1) {
+  #app {
+    flex-direction: row;
+  }
+
+  #hud {
+    flex-direction: column;
+    align-items: stretch;
+    width: 200px;
+    padding-bottom: calc(var(--gap) + env(safe-area-inset-bottom));
+    /* The notch swaps sides with the rotation direction, so the stage takes
+       the left inset and the HUD the right; one of them is always zero. */
+    padding-right: calc(var(--gap) + env(safe-area-inset-right));
+  }
+
+  #stage {
+    padding-top: 0;
+    padding-left: env(safe-area-inset-left);
+  }
+
+  .scores {
+    justify-content: space-between;
+  }
+
+  .status {
+    flex: 0 0 auto;
+  }
+
+  .controls {
+    flex-direction: column;
+    margin-left: 0;
+    margin-top: auto;
+  }
+}
+
+/* The game-over panel covers the stage only, never the HUD. */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--gap);
+  background: rgb(14 16 19 / 72%);
+}
+
+.overlay[hidden] {
+  display: none;
+}
+
+.overlay-panel {
+  text-align: center;
+  padding: 24px;
+  border: 1px solid var(--panel-edge);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 45%);
+}
+
+.overlay-panel h2 {
+  margin: 0 0 4px;
+  font-size: 28px;
+}
+
+.overlay-panel p {
+  margin: 0 0 20px;
+  font-size: 20px;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.overlay-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
 }

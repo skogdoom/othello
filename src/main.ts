@@ -3,25 +3,28 @@ import { findMove } from './ai/index.js';
 import { BoardRenderer } from './render/board.js';
 import { THEME } from './render/theme.js';
 import { Hud } from './ui/hud.js';
+import { GameOverOverlay } from './ui/overlay.js';
 import { WebAudioPlayer } from './audio/index.js';
 import { createMachine } from './machine.js';
 import type { Machine } from './machine.js';
-import type { ClockPort, SearchPort, StoragePort } from './ports.js';
+import type { ClockPort, HudPort, SearchPort, StoragePort } from './ports.js';
 
 const stage = document.querySelector<HTMLElement>('#stage')!;
 const hudRoot = document.querySelector<HTMLElement>('#hud')!;
+const overlayRoot = document.querySelector<HTMLElement>('#overlay')!;
 
 const app = new Application();
 await app.init({
-  width: THEME.boardSize,
-  height: THEME.boardSize,
-  background: THEME.feltEdge,
+  width: stage.clientWidth || THEME.boardSize,
+  height: stage.clientHeight || THEME.boardSize,
+  background: THEME.page,
   preference: 'webgl',
   antialias: true,
+  // DPR 3 on a phone costs fill rate for no visible gain.
   resolution: Math.min(globalThis.devicePixelRatio || 1, 2),
   autoDensity: true,
 });
-stage.appendChild(app.canvas);
+stage.insertBefore(app.canvas, overlayRoot);
 
 const clock: ClockPort = {
   setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
@@ -52,7 +55,7 @@ const search: SearchPort = (() => {
   };
 })();
 
-/** S1 keeps no state across reloads; S5 swaps in localStorage. */
+/** No state across reloads until S5. */
 const storage: StoragePort = {
   save() {},
   load: () => null,
@@ -70,7 +73,30 @@ const hud = new Hud(hudRoot, {
   onToggleMute: () => audio.setMuted(!audio.isMuted()),
   isMuted: () => audio.isMuted(),
 });
-machine = createMachine({ renderer, hud, audio, search, clock, storage });
+const overlay = new GameOverOverlay(overlayRoot, () => machine.restart());
+
+/** The HUD and the game-over panel are both driven by the same phase entry. */
+const ui: HudPort = {
+  render(pos, phase, canUndo) {
+    hud.render(pos, phase, canUndo);
+    overlay.render(pos, phase, canUndo);
+  },
+};
+
+/**
+ * Size from the box the stage element actually has, never from
+ * `window.innerWidth` minus an assumed HUD height. A rotation, a HUD that
+ * wraps onto a second line and a desktop window drag all arrive here the same
+ * way — and none of them touch game state, which lives in the move list.
+ */
+const observer = new ResizeObserver((entries) => {
+  const box = entries[entries.length - 1]?.contentRect;
+  if (box) renderer.resize(box.width, box.height);
+});
+observer.observe(stage);
+renderer.resize(stage.clientWidth, stage.clientHeight);
+
+machine = createMachine({ renderer, hud: ui, audio, search, clock, storage });
 machine.start();
 
 // Decoding happens after the first frame: a missing clip must not hold up the

@@ -2,3 +2,4 @@
 node_modules
 dist
 .esbuild
+.claude/settings.local.json

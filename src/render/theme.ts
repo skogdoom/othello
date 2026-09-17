@@ -3,6 +3,8 @@ export const THEME = {
   boardSize: 800,
   margin: 24,
 
+  /** Behind the board, where the square board letterboxes in a wide stage. */
+  page: 0x0e1013,
   felt: 0x1e7d4f,
   feltEdge: 0x14603b,
   gridLine: 0x14603b,

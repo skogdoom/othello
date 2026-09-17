@@ -2,6 +2,7 @@ import { Container, Graphics, Rectangle } from 'pixi.js';
 import { BLACK, EMPTY, colOf, opponent, rowOf } from '../core/types.js';
 import { get } from '../core/board.js';
 import { CELL, THEME } from './theme.js';
+import { fitBoard } from './layout.js';
 import { TIMING } from './timing.js';
 import { Tweens, easeInOutQuad } from './tween.js';
 import type { Application, FederatedPointerEvent } from 'pixi.js';
@@ -33,6 +34,8 @@ export class BoardRenderer implements RendererPort {
   private readonly discs: (Graphics | null)[] = new Array(64).fill(null);
   private readonly colours: Cell[] = new Array(64).fill(EMPTY);
 
+  private width = 0;
+  private height = 0;
   private hints: readonly Square[] = [];
   private lastMove: Square | null = null;
   private inputEnabled = false;
@@ -48,6 +51,24 @@ export class BoardRenderer implements RendererPort {
     this.board.on('pointertap', this.handleTap);
     this.app.stage.addChild(this.board);
     this.drawGrid();
+  }
+
+  /**
+   * Sizes the renderer to the box the stage element actually has and scales
+   * the board to fit it. Coordinates everywhere else stay in board units;
+   * `toLocal` in the tap handler undoes this scale for free.
+   */
+  resize(width: number, height: number): void {
+    const w = Math.max(1, Math.floor(width));
+    const h = Math.max(1, Math.floor(height));
+    if (w === this.width && h === this.height) return;
+    this.width = w;
+    this.height = h;
+
+    this.app.renderer.resize(w, h);
+    const fit = fitBoard(w, h);
+    this.board.scale.set(fit.scale);
+    this.board.position.set(fit.x, fit.y);
   }
 
   private readonly handleTap = (event: FederatedPointerEvent): void => {

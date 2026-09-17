@@ -1,18 +1,6 @@
-import { BLACK, WHITE } from '../core/types.js';
+import { statusText } from './text.js';
 import type { Position } from '../core/game.js';
 import type { HudPort, Phase } from '../ports.js';
-
-const NAME = { [BLACK]: 'Black', [WHITE]: 'White' } as const;
-
-function statusText(pos: Position, phase: Phase): string {
-  if (phase.kind === 'passNotice') return `${NAME[phase.by]} has no move — passing`;
-  if (pos.status.kind === 'over') {
-    const { winner } = pos.status;
-    return winner === null ? 'Draw' : `${NAME[winner]} wins`;
-  }
-  if (phase.kind === 'humanTurn') return 'Your turn';
-  return `${NAME[pos.status.player]} is thinking…`;
-}
 
 export type HudActions = Readonly<{
   onRestart: () => void;
@@ -21,8 +9,10 @@ export type HudActions = Readonly<{
 }>;
 
 /**
- * S2 HUD: score, whose turn it is, restart and mute. Undo (S5) and the
- * difficulty selector (S4) plug into the same render call.
+ * Score, whose turn it is, restart and mute. One markup tree for both
+ * layouts: a bottom bar in portrait, a sidebar in landscape, decided in CSS.
+ * Undo (S5) and the difficulty selector (S4) go in `.controls` alongside the
+ * buttons that are already there.
  */
 export class Hud implements HudPort {
   private readonly blackScore: HTMLElement;
@@ -37,8 +27,10 @@ export class Hud implements HudPort {
         <div class="score" id="score-white"><span class="disc white"></span><b>2</b></div>
       </div>
       <p class="status" id="status">Your turn</p>
-      <button type="button" id="mute" aria-pressed="false">Sound on</button>
-      <button type="button" id="restart">Restart</button>
+      <div class="controls">
+        <button type="button" id="mute" aria-pressed="false">Sound on</button>
+        <button type="button" id="restart">Restart</button>
+      </div>
     `;
     this.blackScore = root.querySelector('#score-black b')!;
     this.whiteScore = root.querySelector('#score-white b')!;
