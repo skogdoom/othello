@@ -73,7 +73,7 @@ Built in vertical slices, each one playable in a browser.
 |-------|--------------|-------|
 | S1 | Playable skeleton: rules, move list, state machine, depth-2 AI, Pixi board, HUD | Done |
 | S2 | Flip cascade, placement animation, audio with synthesized placeholders, mute | Done |
-| S3 | Responsive layout, two HUD layouts, safe areas, touch input | Done (not yet run on a physical device) |
+| S3 | Responsive layout, two HUD layouts, safe areas, touch input | Done (verified on iPhone 13 mini; Android still outstanding) |
 | S4 | Real AI: worker, alpha-beta, iterative deepening, three difficulty levels | Not started |
 | S5 | Undo and resume | Not started |
 | S6 | Real sound assets | Not started |
