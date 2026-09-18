@@ -1,8 +1,11 @@
-import { count } from '../core/board.js';
+import { emptyCount } from '../core/board.js';
 import { applyMove, legalMoves } from '../core/rules.js';
 import { opponent } from '../core/types.js';
+import { discDiff, hardEval, mediumEval } from './eval.js';
+import { iterativeDeepen } from './search.js';
 import type { Board } from '../core/board.js';
 import type { Player, Square } from '../core/types.js';
+import type { EvalFn } from './search.js';
 import type { Level } from './levels.js';
 
 export type { Level } from './levels.js';
@@ -16,59 +19,82 @@ export class NoMoveError extends Error {
 }
 
 /**
- * S1: every level is the same depth-2, disc-count search. S4 replaces the
- * body with alpha-beta + iterative deepening + a real evaluation and moves it
- * into a worker; this signature is the boundary that makes that a shim.
+ * Wall-clock budget for medium and hard, per the AI table in CLAUDE.md.
+ * Mutable only so the test suite can shrink it — a 100-game match test at the
+ * real budget would take minutes. Application code must never write to this.
  */
-const DEPTH: Readonly<Record<Level, number>> = {
-  easy: 2,
-  medium: 2,
-  hard: 2,
-};
+const BUDGET_MS: Record<'medium' | 'hard', number> = { medium: 250, hard: 800 };
 
-/** Disc difference from `p`'s point of view — genuinely bad Othello. */
-function evaluate(b: Board, p: Player): number {
-  return count(b, p) - count(b, opponent(p));
+/** Test-only: shrinks the search budget so the AI match tests run in seconds. */
+export function __setBudgetForTests(level: 'medium' | 'hard', ms: number): void {
+  BUDGET_MS[level] = ms;
 }
 
-/** Negamax, no pruning. `p` is the side to move at this node. */
+/**
+ * Test-only: caps how deep medium and hard search, in place of the
+ * empties-derived depth `findMove` otherwise uses. A wall-clock budget makes
+ * a fixed-time match test flaky by nature — how deep the search gets before
+ * the deadline depends on the machine running it, not just the algorithm.
+ * Capping the depth and leaving the budget generous (so the deadline is
+ * never actually reached) makes the search's outcome depend only on the
+ * position, so a match test is reproducible everywhere it runs.
+ */
+const MAX_DEPTH_CAP: Record<'medium' | 'hard', number | null> = { medium: null, hard: null };
+
+export function __setMaxDepthForTests(level: 'medium' | 'hard', depth: number | null): void {
+  MAX_DEPTH_CAP[level] = depth;
+}
+
+/** Exact-solve once this many squares or fewer are empty, per the AI table. */
+const SOLVE_THRESHOLD: Readonly<Record<'medium' | 'hard', number>> = { medium: 8, hard: 12 };
+
+const EVAL: Readonly<Record<'medium' | 'hard', EvalFn>> = { medium: mediumEval, hard: hardEval };
+
+/** Plain negamax, no pruning, no transposition table — depth 2 does not need either. */
 function negamax(b: Board, p: Player, depth: number): number {
   const moves = legalMoves(b, p);
-
   if (moves.length === 0) {
-    if (legalMoves(b, opponent(p)).length === 0) return evaluate(b, p);
-    if (depth <= 0) return evaluate(b, p);
+    if (legalMoves(b, opponent(p)).length === 0) return discDiff(b, p);
+    if (depth <= 0) return discDiff(b, p);
     return -negamax(b, opponent(p), depth - 1);
   }
-  if (depth <= 0) return evaluate(b, p);
+  if (depth <= 0) return discDiff(b, p);
 
   let best = -Infinity;
-  for (const m of moves) {
-    const score = -negamax(applyMove(b, p, m).board, opponent(p), depth - 1);
-    if (score > best) best = score;
-  }
+  for (const m of moves) best = Math.max(best, -negamax(applyMove(b, p, m).board, opponent(p), depth - 1));
   return best;
 }
 
-export function findMove(
-  b: Board,
-  p: Player,
-  level: Level,
-  signal?: AbortSignal,
-): Square {
+/** Depth 2, no deepening, disc count only — genuinely bad Othello by design. */
+function easyMove(b: Board, p: Player): Square {
   const moves = legalMoves(b, p);
-  if (moves.length === 0) throw new NoMoveError();
-
   let bestMove = moves[0]!;
   let bestScore = -Infinity;
-
   for (const m of moves) {
-    if (signal?.aborted) break;
-    const score = -negamax(applyMove(b, p, m).board, opponent(p), DEPTH[level] - 1);
+    const score = -negamax(applyMove(b, p, m).board, opponent(p), 1);
     if (score > bestScore) {
       bestScore = score;
       bestMove = m;
     }
   }
   return bestMove;
+}
+
+export function findMove(b: Board, p: Player, level: Level, signal?: AbortSignal): Square {
+  const moves = legalMoves(b, p);
+  if (moves.length === 0) throw new NoMoveError();
+  if (moves.length === 1) return moves[0]!;
+
+  if (level === 'easy') return easyMove(b, p);
+
+  const budget = BUDGET_MS[level];
+  const empties = emptyCount(b);
+  const cap = MAX_DEPTH_CAP[level];
+
+  // Solving exactly is the same search with an exact-at-terminal eval and a
+  // depth generous enough to always reach the end of the game.
+  if (empties <= SOLVE_THRESHOLD[level]) {
+    return iterativeDeepen(b, p, discDiff, budget, signal, cap ?? empties * 2 + 4);
+  }
+  return iterativeDeepen(b, p, EVAL[level], budget, signal, cap ?? empties + 4);
 }

@@ -11,9 +11,9 @@
     "dev": "vite",
     "serve": "node scripts/esbuild-serve.mjs",
     "bundle": "node scripts/esbuild-serve.mjs --build",
-    "build": "tsc --noEmit && vite build",
+    "build": "npm run typecheck && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
     "test": "vitest run"
   },
   "dependencies": {

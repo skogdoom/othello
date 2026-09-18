@@ -1,4 +1,6 @@
-import { statusText } from './text.js';
+import { LEVELS } from '../ai/levels.js';
+import { LEVEL_NAME, statusText } from './text.js';
+import type { Level } from '../ai/levels.js';
 import type { Position } from '../core/game.js';
 import type { HudPort, Phase } from '../ports.js';
 
@@ -6,21 +8,24 @@ export type HudActions = Readonly<{
   onRestart: () => void;
   onToggleMute: () => void;
   isMuted: () => boolean;
+  onSetDifficulty: (level: Level) => void;
+  getDifficulty: () => Level;
 }>;
 
 /**
- * Score, whose turn it is, restart and mute. One markup tree for both
- * layouts: a bottom bar in portrait, a sidebar in landscape, decided in CSS.
- * Undo (S5) and the difficulty selector (S4) go in `.controls` alongside the
- * buttons that are already there.
+ * Score, whose turn it is, difficulty, restart and mute. One markup tree for
+ * both layouts: a bottom bar in portrait, a sidebar in landscape, decided in
+ * CSS. Undo (S5) goes in `.controls` alongside the controls already there.
  */
 export class Hud implements HudPort {
   private readonly blackScore: HTMLElement;
   private readonly whiteScore: HTMLElement;
   private readonly status: HTMLElement;
+  private readonly difficulty: HTMLSelectElement;
   private readonly mute: HTMLButtonElement;
 
   constructor(root: HTMLElement, private readonly actions: HudActions) {
+    const options = LEVELS.map((l) => `<option value="${l}">${LEVEL_NAME[l]}</option>`).join('');
     root.innerHTML = `
       <div class="scores">
         <div class="score" id="score-black"><span class="disc black"></span><b>2</b></div>
@@ -28,6 +33,7 @@ export class Hud implements HudPort {
       </div>
       <p class="status" id="status">Your turn</p>
       <div class="controls">
+        <select id="difficulty" aria-label="Difficulty">${options}</select>
         <button type="button" id="mute" aria-pressed="false">Sound on</button>
         <button type="button" id="restart">Restart</button>
       </div>
@@ -35,6 +41,7 @@ export class Hud implements HudPort {
     this.blackScore = root.querySelector('#score-black b')!;
     this.whiteScore = root.querySelector('#score-white b')!;
     this.status = root.querySelector('#status')!;
+    this.difficulty = root.querySelector('#difficulty')!;
     this.mute = root.querySelector('#mute')!;
 
     root.querySelector('#restart')!.addEventListener('click', actions.onRestart);
@@ -42,7 +49,11 @@ export class Hud implements HudPort {
       actions.onToggleMute();
       this.drawMute();
     });
+    this.difficulty.addEventListener('change', () => {
+      actions.onSetDifficulty(this.difficulty.value as Level);
+    });
     this.drawMute();
+    this.drawDifficulty();
   }
 
   private drawMute(): void {
@@ -51,10 +62,15 @@ export class Hud implements HudPort {
     this.mute.setAttribute('aria-pressed', String(muted));
   }
 
+  private drawDifficulty(): void {
+    this.difficulty.value = this.actions.getDifficulty();
+  }
+
   render(pos: Position, phase: Phase, _canUndo: boolean): void {
     this.blackScore.textContent = String(pos.score.black);
     this.whiteScore.textContent = String(pos.score.white);
     this.status.textContent = statusText(pos, phase);
     this.drawMute();
+    this.drawDifficulty();
   }
 }

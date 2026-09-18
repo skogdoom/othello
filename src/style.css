@@ -110,7 +110,8 @@ body {
   margin-left: auto;
 }
 
-button {
+button,
+select {
   font: inherit;
   color: var(--ink);
   background: var(--button);

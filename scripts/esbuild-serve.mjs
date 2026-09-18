@@ -58,6 +58,40 @@ await rm(outdir, { recursive: true, force: true });
 await mkdir(outdir, { recursive: true });
 await writeHtml({ liveReload: !buildOnly });
 
+/**
+ * `main.ts` locates the AI worker with the Vite-native
+ * `new Worker(new URL('./ai/worker.ts', import.meta.url))` pattern, which
+ * Vite bundles specially. Plain esbuild does not — it leaves that string
+ * literal untouched — so it is rewritten after bundling to point at the
+ * worker's own separately-bundled output instead.
+ */
+const workerCtx = await esbuild.context({
+  entryPoints: [path.join(root, 'src/ai/worker.ts')],
+  outfile: path.join(outdir, 'ai/worker.js'),
+  bundle: true,
+  format: 'esm',
+  target: 'es2022',
+  sourcemap: true,
+  minify: buildOnly,
+  logLevel: 'info',
+});
+
+const pointWorkerAtBundle = {
+  name: 'point-worker-at-bundle',
+  setup(build) {
+    build.onEnd(async (result) => {
+      if (result.errors.length > 0) return;
+      const file = path.join(outdir, 'main.js');
+      const source = await readFile(file, 'utf8');
+      const needle = './ai/worker.ts';
+      if (!source.includes(needle)) {
+        throw new Error(`main.js no longer references ${needle}; update scripts/esbuild-serve.mjs`);
+      }
+      await writeFile(file, source.replaceAll(needle, './ai/worker.js'));
+    });
+  },
+};
+
 const ctx = await esbuild.context({
   entryPoints: [path.join(root, 'src/main.ts'), path.join(root, 'src/style.css')],
   outdir,
@@ -68,13 +102,17 @@ const ctx = await esbuild.context({
   sourcemap: true,
   minify: buildOnly,
   logLevel: 'info',
+  plugins: [pointWorkerAtBundle],
 });
 
 if (buildOnly) {
+  await workerCtx.rebuild();
+  await workerCtx.dispose();
   await ctx.rebuild();
   await ctx.dispose();
   console.log(`Bundled into ${path.relative(root, outdir)}/`);
 } else {
+  await workerCtx.watch();
   await ctx.watch();
   const served = await ctx.serve({ servedir: outdir, port, host });
   const shown = host === '0.0.0.0' ? (served.hosts ?? []).join(', ') : host;
