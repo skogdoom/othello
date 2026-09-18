@@ -76,7 +76,7 @@ Built in vertical slices, each one playable in a browser.
 | S2 | Flip cascade, placement animation, audio with synthesized placeholders, mute | Done |
 | S3 | Responsive layout, two HUD layouts, safe areas, touch input | Done (verified on iPhone 13 mini; Android still outstanding) |
 | S4 | Real AI: worker, alpha-beta, iterative deepening, transposition table, endgame solver, three difficulty levels with the HUD selector, `aiDebug` dev stepper | Done |
-| S5 | Undo and resume | Not started |
+| S5 | Undo, and resume from `localStorage` on reload | Done |
 | S6 | Real sound assets | Not started |
 | S7 | Hardening and release | Not started |
 

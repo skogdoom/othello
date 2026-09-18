@@ -131,6 +131,11 @@ button:active {
   background: #3d444d;
 }
 
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 /*
  * Landscape: the board is height-constrained, so a sidebar HUD costs no board
  * size at all. That is the whole reason for the split — do not flatten it back

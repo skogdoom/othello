@@ -69,10 +69,29 @@ const search: SearchPort = (() => {
   };
 })();
 
-/** No state across reloads until S5. */
+const SAVE_KEY = 'othello.game';
+
+/**
+ * A private-mode `localStorage` can throw on read or write rather than just
+ * being absent, so every call is guarded the same way the audio module
+ * guards its own mute flag: a storage failure is never worth a broken game,
+ * it just means this session does not resume next time.
+ */
 const storage: StoragePort = {
-  save() {},
-  load: () => null,
+  save(json) {
+    try {
+      globalThis.localStorage?.setItem(SAVE_KEY, json);
+    } catch {
+      // Ignored — see above.
+    }
+  },
+  load() {
+    try {
+      return globalThis.localStorage?.getItem(SAVE_KEY) ?? null;
+    } catch {
+      return null;
+    }
+  },
 };
 
 const audio = new WebAudioPlayer();
@@ -90,6 +109,7 @@ const hud = new Hud(hudRoot, {
   // Hud reads this once at construction, before `machine` exists — hence the
   // optional chaining, even though every later call happens after start().
   getDifficulty: () => machine?.getGame().difficulty ?? 'easy',
+  onUndo: () => machine.undo(),
 });
 const overlay = new GameOverOverlay(overlayRoot, () => machine.restart());
 

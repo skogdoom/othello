@@ -10,18 +10,20 @@ export type HudActions = Readonly<{
   isMuted: () => boolean;
   onSetDifficulty: (level: Level) => void;
   getDifficulty: () => Level;
+  onUndo: () => void;
 }>;
 
 /**
- * Score, whose turn it is, difficulty, restart and mute. One markup tree for
- * both layouts: a bottom bar in portrait, a sidebar in landscape, decided in
- * CSS. Undo (S5) goes in `.controls` alongside the controls already there.
+ * Score, whose turn it is, difficulty, undo, restart and mute. One markup
+ * tree for both layouts: a bottom bar in portrait, a sidebar in landscape,
+ * decided in CSS.
  */
 export class Hud implements HudPort {
   private readonly blackScore: HTMLElement;
   private readonly whiteScore: HTMLElement;
   private readonly status: HTMLElement;
   private readonly difficulty: HTMLSelectElement;
+  private readonly undo: HTMLButtonElement;
   private readonly mute: HTMLButtonElement;
 
   constructor(root: HTMLElement, private readonly actions: HudActions) {
@@ -34,6 +36,7 @@ export class Hud implements HudPort {
       <p class="status" id="status">Your turn</p>
       <div class="controls">
         <select id="difficulty" aria-label="Difficulty">${options}</select>
+        <button type="button" id="undo">Undo</button>
         <button type="button" id="mute" aria-pressed="false">Sound on</button>
         <button type="button" id="restart">Restart</button>
       </div>
@@ -42,9 +45,11 @@ export class Hud implements HudPort {
     this.whiteScore = root.querySelector('#score-white b')!;
     this.status = root.querySelector('#status')!;
     this.difficulty = root.querySelector('#difficulty')!;
+    this.undo = root.querySelector('#undo')!;
     this.mute = root.querySelector('#mute')!;
 
     root.querySelector('#restart')!.addEventListener('click', actions.onRestart);
+    this.undo.addEventListener('click', actions.onUndo);
     this.mute.addEventListener('click', () => {
       actions.onToggleMute();
       this.drawMute();
@@ -66,10 +71,11 @@ export class Hud implements HudPort {
     this.difficulty.value = this.actions.getDifficulty();
   }
 
-  render(pos: Position, phase: Phase, _canUndo: boolean): void {
+  render(pos: Position, phase: Phase, canUndo: boolean): void {
     this.blackScore.textContent = String(pos.score.black);
     this.whiteScore.textContent = String(pos.score.white);
     this.status.textContent = statusText(pos, phase);
+    this.undo.disabled = !canUndo;
     this.drawMute();
     this.drawDifficulty();
   }
