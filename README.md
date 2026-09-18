@@ -42,10 +42,11 @@ The game rules and the AI never import PixiJS or touch the DOM.
 ```
 src/
   core/    pure TS: board, move generation, flipping, pass/end detection
-  ai/      evaluation + search
+  ai/      evaluation + search, run in a Web Worker
   render/  PixiJS: board, discs, flip animation, hints, hit-testing
   ui/      DOM HUD
   audio/   WebAudio wrapper
+  dev/     dev-only tools behind URL flags, e.g. the aiDebug move-ranking stepper
   ports.ts the interfaces between them
   main.ts  wiring
   machine.ts the game state machine
@@ -74,14 +75,13 @@ Built in vertical slices, each one playable in a browser.
 | S1 | Playable skeleton: rules, move list, state machine, depth-2 AI, Pixi board, HUD | Done |
 | S2 | Flip cascade, placement animation, audio with synthesized placeholders, mute | Done |
 | S3 | Responsive layout, two HUD layouts, safe areas, touch input | Done (verified on iPhone 13 mini; Android still outstanding) |
-| S4 | Real AI: worker, alpha-beta, iterative deepening, three difficulty levels | Not started |
+| S4 | Real AI: worker, alpha-beta, iterative deepening, transposition table, endgame solver, three difficulty levels with the HUD selector, `aiDebug` dev stepper | Done |
 | S5 | Undo and resume | Not started |
 | S6 | Real sound assets | Not started |
 | S7 | Hardening and release | Not started |
 
 Until S6 lands, `/sounds/` is empty on purpose and every sound is a synthesized
-placeholder. Until S4 lands, all three difficulty levels play the same depth-2
-search.
+placeholder.
 
 ## Licence
 

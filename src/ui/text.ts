@@ -1,11 +1,18 @@
 import { BLACK, WHITE } from '../core/types.js';
 import type { Position } from '../core/game.js';
 import type { Player } from '../core/types.js';
+import type { Level } from '../ai/levels.js';
 import type { Phase } from '../ports.js';
 
 export const PLAYER_NAME: Readonly<Record<Player, string>> = {
   [BLACK]: 'Black',
   [WHITE]: 'White',
+};
+
+export const LEVEL_NAME: Readonly<Record<Level, string>> = {
+  easy: 'Easy',
+  medium: 'Medium',
+  hard: 'Hard',
 };
 
 /** "Black wins", "Draw" — only meaningful once the game is over. */
