@@ -27,7 +27,9 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: `npx vite preview --port ${PORT} --strictPort --base ${BASE}`,
+    // Bound to the same address as `url`: on CI runners `localhost` can resolve
+    // to ::1 only, and the server would never answer the readiness probe.
+    command: `npx vite preview --host 127.0.0.1 --port ${PORT} --strictPort --base ${BASE}`,
     url: `http://127.0.0.1:${PORT}${BASE}`,
     reuseExistingServer: !process.env.CI,
   },
