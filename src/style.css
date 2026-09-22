@@ -120,6 +120,7 @@ select {
   /* 44px is the smallest comfortable tap target on a phone. */
   min-height: 44px;
   padding: 10px 16px;
+  white-space: nowrap;
   cursor: pointer;
 }
 
@@ -134,6 +135,20 @@ button:active {
 button:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+/*
+ * A 390 px phone has no room for all four controls on one line, so they go
+ * two by two. In portrait the board is width-constrained, so the extra row
+ * costs no board size.
+ */
+@media (width < 480px) and (aspect-ratio < 1) {
+  .controls {
+    flex: 1 1 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    margin-left: 0;
+  }
 }
 
 /*
@@ -174,6 +189,27 @@ button:disabled {
     margin-left: 0;
     margin-top: auto;
   }
+}
+
+/* Until the first frame: the script bundle is most of the page weight. */
+.loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: var(--gap);
+  text-align: center;
+  color: var(--dim);
+}
+
+.loading.failed {
+  color: var(--ink);
+}
+
+noscript .loading {
+  position: fixed;
 }
 
 /* The game-over panel covers the stage only, never the HUD. */

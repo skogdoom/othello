@@ -9,7 +9,29 @@ export type EvalFn = (b: Board, p: Player) => number;
 class OutOfTime extends Error {}
 
 type TTFlag = 'exact' | 'lower' | 'upper';
-type TTEntry = Readonly<{ depth: number; value: number; flag: TTFlag; bestMove: Square }>;
+/**
+ * `complete` records that no line under this node was cut off by the depth
+ * limit — every leaf was a finished game — so the stored value or bound would
+ * not change at any greater depth.
+ */
+type TTEntry = Readonly<{
+  depth: number;
+  value: number;
+  flag: TTFlag;
+  bestMove: Square;
+  complete: boolean;
+}>;
+
+/** What one `iterativeDeepen` call found, and how hard it had to look. */
+export type SearchResult = Readonly<{
+  move: Square;
+  /** Deepest iteration that finished; 0 when the move was forced. */
+  depth: number;
+  /** Every line reached the end of the game: the result is final, not heuristic. */
+  complete: boolean;
+  /** Nodes visited, across every iteration including an abandoned last one. */
+  nodes: number;
+}>;
 
 /** Board-plus-side-to-move key. One digit per cell: simple and collision-free. */
 function hashKey(b: Board, p: Player): string {
@@ -30,8 +52,13 @@ function orderMoves(moves: readonly Square[], hint: Square | undefined): Square[
   return hint !== undefined && moves.includes(hint) ? [hint, ...ordered] : ordered;
 }
 
-/** Node counter shared across one search call, checked periodically against the deadline. */
-type Budget = { nodes: number; deadline: number };
+/**
+ * Shared across one search call. `nodes` is checked periodically against the
+ * deadline; `horizon` counts the lines the current iteration cut off at the
+ * depth limit, so an iteration that finishes with it still at zero has
+ * searched the whole remaining game.
+ */
+type Budget = { nodes: number; deadline: number; horizon: number };
 
 function checkBudget(budget: Budget): void {
   budget.nodes++;
@@ -55,10 +82,13 @@ function alphaBeta(
   // to a plain minimax search, just faster.
   const origAlpha = alpha;
   const origBeta = beta;
+  const horizonBefore = budget.horizon;
 
   const key = hashKey(b, p);
   const entry = tt.get(key);
   if (entry && entry.depth >= depth) {
+    // A reused value is only as final as the search that produced it.
+    if (!entry.complete) budget.horizon++;
     if (entry.flag === 'exact') return entry.value;
     if (entry.flag === 'lower') alpha = Math.max(alpha, entry.value);
     else beta = Math.min(beta, entry.value);
@@ -68,10 +98,10 @@ function alphaBeta(
   const moves = legalMoves(b, p);
   if (moves.length === 0) {
     if (legalMoves(b, opponent(p)).length === 0) return evalFn(b, p);
-    if (depth <= 0) return evalFn(b, p);
+    if (depth <= 0) return horizonLeaf(b, p, evalFn, budget);
     return -alphaBeta(b, opponent(p), depth - 1, -beta, -alpha, tt, evalFn, budget);
   }
-  if (depth <= 0) return evalFn(b, p);
+  if (depth <= 0) return horizonLeaf(b, p, evalFn, budget);
 
   const ordered = orderMoves(moves, entry?.bestMove);
   let best = -Infinity;
@@ -89,8 +119,14 @@ function alphaBeta(
   }
 
   const flag: TTFlag = best <= origAlpha ? 'upper' : best >= origBeta ? 'lower' : 'exact';
-  tt.set(key, { depth, value: best, flag, bestMove });
+  tt.set(key, { depth, value: best, flag, bestMove, complete: budget.horizon === horizonBefore });
   return best;
+}
+
+/** A game still in progress, scored heuristically because the depth ran out. */
+function horizonLeaf(b: Board, p: Player, evalFn: EvalFn, budget: Budget): number {
+  budget.horizon++;
+  return evalFn(b, p);
 }
 
 function searchRoot(
@@ -120,7 +156,13 @@ function searchRoot(
     if (bestValue > alpha) alpha = bestValue;
   }
 
-  tt.set(hashKey(b, p), { depth, value: bestValue, flag: 'exact', bestMove });
+  tt.set(hashKey(b, p), {
+    depth,
+    value: bestValue,
+    flag: 'exact',
+    bestMove,
+    complete: budget.horizon === 0,
+  });
   return bestMove;
 }
 
@@ -134,6 +176,11 @@ function searchRoot(
  * end of the game (as `findMove` does once few squares are empty) makes this
  * the endgame solver: once an iteration completes at a depth that reaches
  * every terminal line, its value and move are exact, not heuristic.
+ *
+ * An iteration that cut no line off at the depth limit has searched the whole
+ * remaining game, so a deeper one would return the same move: deepening stops
+ * there instead of spending the rest of the budget re-proving it. That is
+ * what lets a solved endgame reply early rather than always at the deadline.
  */
 export function iterativeDeepen(
   b: Board,
@@ -142,23 +189,31 @@ export function iterativeDeepen(
   budgetMs: number,
   signal: AbortSignal | undefined,
   maxDepth: number,
-): Square {
+): SearchResult {
   const moves = legalMoves(b, p);
   if (moves.length === 0) throw new Error('iterativeDeepen called for a player with no legal move');
-  if (moves.length === 1) return moves[0]!;
+  if (moves.length === 1) return { move: moves[0]!, depth: 0, complete: false, nodes: 0 };
 
   const tt = new Map<string, TTEntry>();
-  const budget: Budget = { nodes: 0, deadline: Date.now() + budgetMs };
+  const budget: Budget = { nodes: 0, deadline: Date.now() + budgetMs, horizon: 0 };
   let best = moves[0]!;
+  let completed = 0;
+  let complete = false;
 
   for (let depth = 1; depth <= maxDepth; depth++) {
     if (signal?.aborted || Date.now() >= budget.deadline) break;
+    budget.horizon = 0;
     try {
       best = searchRoot(b, p, depth, tt, evalFn, budget);
     } catch (e) {
       if (e instanceof OutOfTime) break;
       throw e;
     }
+    completed = depth;
+    if (budget.horizon === 0) {
+      complete = true;
+      break;
+    }
   }
-  return best;
+  return { move: best, depth: completed, complete, nodes: budget.nodes };
 }
