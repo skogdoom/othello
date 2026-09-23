@@ -163,6 +163,11 @@ button:disabled {
 
   #hud {
     flex-direction: column;
+    /* Wrapping a column that runs out of height would push the controls into
+       a second column past the sidebar's edge. Scroll instead, as a last
+       resort; the short-landscape layout below keeps it from coming to that. */
+    flex-wrap: nowrap;
+    overflow-y: auto;
     align-items: stretch;
     width: 200px;
     padding-bottom: calc(var(--gap) + env(safe-area-inset-bottom));
@@ -210,6 +215,23 @@ button:disabled {
 
 noscript .loading {
   position: fixed;
+}
+
+/*
+ * A phone in landscape leaves as little as 265 px of height once Safari shows
+ * its toolbar and tab bar: not enough for four stacked controls. They go two by
+ * two in a wider sidebar instead. The board is height-constrained here, so the
+ * extra width still costs it nothing.
+ */
+@media (min-aspect-ratio: 1/1) and (max-height: 400px) {
+  #hud {
+    width: calc(280px + env(safe-area-inset-right));
+  }
+
+  .controls {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
 }
 
 /* The game-over panel covers the stage only, never the HUD. */

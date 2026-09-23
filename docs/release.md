@@ -17,7 +17,8 @@ check, how to profile on a phone, and how the build gets deployed.
 
 The browser tests cover: boot with no sound files and no console errors, a move
 and the AI's reply, undo, resume and difficulty after a reload, both HUD
-layouts at the 390 px baseline with 44 px tap targets and no page scroll,
+layouts at the 390 px baseline plus a 265 px-tall landscape (an iPhone 13 mini
+with Safari's tab bar showing), with 44 px tap targets and nothing overflowing,
 rotating during a search and a flip, a lost and restored WebGL context, the
 2D-canvas fallback when WebGL is unavailable, the main-thread fallback when
 the AI worker cannot load, and the error message when nothing can draw.
@@ -38,6 +39,7 @@ row before a release.
 | Touch: corner and edge squares hit reliably, no double-tap zoom, no scroll bounce | — | — | — | — | | |
 | Rotate mid-search and mid-flip: nothing resets | — | — | — | — | | |
 | Safe areas: nothing under the notch or home indicator, both orientations | — | — | — | — | | |
+| Landscape with several tabs open (Safari's tab bar showing): whole HUD visible | — | — | — | — | | |
 | Background the app for a minute, come back: board still drawn, game intact | | | | | | |
 | Close the tab mid-game, reopen: game resumes | | | | | | |
 | `?perf`: see below | | | | | | |
