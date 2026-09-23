@@ -3,3 +3,5 @@ node_modules
 dist
 .esbuild
 .claude/settings.local.json
+test-results
+playwright-report

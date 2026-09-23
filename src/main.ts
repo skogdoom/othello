@@ -5,69 +5,58 @@ import { Hud } from './ui/hud.js';
 import { GameOverOverlay } from './ui/overlay.js';
 import { WebAudioPlayer } from './audio/index.js';
 import { createMachine } from './machine.js';
+import { createSearchClient } from './search-client.js';
 import type { Machine } from './machine.js';
-import type { Square } from './core/types.js';
-import type { ClockPort, HudPort, SearchPort, StoragePort } from './ports.js';
+import type { SearchStats } from './ai/protocol.js';
+import type { ClockPort, HudPort, StoragePort } from './ports.js';
 
 const stage = document.querySelector<HTMLElement>('#stage')!;
 const hudRoot = document.querySelector<HTMLElement>('#hud')!;
 const overlayRoot = document.querySelector<HTMLElement>('#overlay')!;
+const loading = document.querySelector<HTMLElement>('#loading');
+const params = new URLSearchParams(location.search);
 
 const app = new Application();
-await app.init({
-  width: stage.clientWidth || THEME.boardSize,
-  height: stage.clientHeight || THEME.boardSize,
-  background: THEME.page,
-  preference: 'webgl',
-  antialias: true,
-  // DPR 3 on a phone costs fill rate for no visible gain.
-  resolution: Math.min(globalThis.devicePixelRatio || 1, 2),
-  autoDensity: true,
-});
+try {
+  // Pixi falls back from WebGL to WebGPU to a 2D canvas on its own, so this
+  // only throws when a browser can draw nothing at all.
+  await app.init({
+    width: stage.clientWidth || THEME.boardSize,
+    height: stage.clientHeight || THEME.boardSize,
+    background: THEME.page,
+    preference: 'webgl',
+    antialias: true,
+    // DPR 3 on a phone costs fill rate for no visible gain.
+    resolution: Math.min(globalThis.devicePixelRatio || 1, 2),
+    autoDensity: true,
+  });
+} catch (error) {
+  // Say why, rather than leave "Loading…" up forever.
+  if (loading) {
+    loading.textContent = 'This browser could not draw the board. Try another browser.';
+    loading.classList.add('failed');
+  }
+  throw error;
+}
 stage.insertBefore(app.canvas, overlayRoot);
 
+// `window`, not `globalThis`: the test tooling brings Node's typings into this
+// program, and Node's `setTimeout` returns an object rather than a number.
 const clock: ClockPort = {
-  setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms),
-  clearTimeout: (handle) => globalThis.clearTimeout(handle),
+  setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+  clearTimeout: (handle) => window.clearTimeout(handle),
 };
 
-/**
- * Runs `findMove` in a Web Worker so a slow search never stalls the flip
- * animation. `abort()` cannot truly preempt a search already running on the
- * worker's single thread, so it just supersedes the request id: a reply that
- * arrives for a stale id is dropped here, and the machine's own epoch guard
- * drops it again for good measure.
- */
-const search: SearchPort = (() => {
-  const worker = new Worker(new URL('./ai/worker.ts', import.meta.url), { type: 'module' });
-  let requestId = 0;
-  let onDone: ((move: Square) => void) | null = null;
+/** Set behind the `perf` URL flag; see `dev/perf.ts`. */
+let perfPanel: { recordSearch: (stats: SearchStats) => void } | null = null;
 
-  worker.onmessage = (event: MessageEvent<{ requestId: number; move: Square }>) => {
-    if (event.data.requestId !== requestId) return; // superseded by a newer request
-    const cb = onDone;
-    onDone = null;
-    cb?.(event.data.move);
-  };
-
-  return {
-    start(req, cb) {
-      requestId++;
-      onDone = cb;
-      worker.postMessage({
-        requestId,
-        cells: req.board.cells,
-        player: req.player,
-        level: req.level,
-      });
-    },
-    abort() {
-      requestId++;
-      onDone = null;
-      worker.postMessage({ abort: true });
-    },
-  };
-})();
+const search = createSearchClient(
+  // Vite recognises this exact `new Worker(new URL(...))` shape and bundles
+  // the worker as its own chunk.
+  () => new Worker(new URL('./ai/worker.ts', import.meta.url), { type: 'module' }),
+  () => import('./ai/index.js').then((ai) => ai.searchMove),
+  (stats) => perfPanel?.recordSearch(stats),
+);
 
 const SAVE_KEY = 'othello.game';
 
@@ -147,10 +136,15 @@ renderer.resize(stage.clientWidth, stage.clientHeight);
 
 machine = createMachine({ renderer, hud: ui, audio, search, clock, storage });
 machine.start();
+loading?.remove();
 
-if (new URLSearchParams(location.search).has('aiDebug')) {
+if (params.has('aiDebug')) {
   const { DevStepper } = await import('./dev/stepper.js');
   devStepper = new DevStepper(() => machine.getGame());
+}
+if (params.has('perf')) {
+  const { PerfPanel } = await import('./dev/perf.js');
+  perfPanel = new PerfPanel(app);
 }
 
 // Decoding happens after the first frame: a missing clip must not hold up the

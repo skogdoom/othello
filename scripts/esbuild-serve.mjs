@@ -62,8 +62,10 @@ await writeHtml({ liveReload: !buildOnly });
  * `main.ts` locates the AI worker with the Vite-native
  * `new Worker(new URL('./ai/worker.ts', import.meta.url))` pattern, which
  * Vite bundles specially. Plain esbuild does not — it leaves that string
- * literal untouched — so it is rewritten after bundling to point at the
- * worker's own separately-bundled output instead.
+ * literal untouched — so the source is rewritten as it loads to point at the
+ * worker's own separately-bundled output instead. Rewriting the source, not
+ * the output file, matters: serve mode answers from memory, so an edit to the
+ * file on disk would never reach the browser.
  */
 const workerCtx = await esbuild.context({
   entryPoints: [path.join(root, 'src/ai/worker.ts')],
@@ -79,15 +81,13 @@ const workerCtx = await esbuild.context({
 const pointWorkerAtBundle = {
   name: 'point-worker-at-bundle',
   setup(build) {
-    build.onEnd(async (result) => {
-      if (result.errors.length > 0) return;
-      const file = path.join(outdir, 'main.js');
-      const source = await readFile(file, 'utf8');
+    build.onLoad({ filter: /[\\/]src[\\/]main\.ts$/ }, async (args) => {
+      const source = await readFile(args.path, 'utf8');
       const needle = './ai/worker.ts';
       if (!source.includes(needle)) {
-        throw new Error(`main.js no longer references ${needle}; update scripts/esbuild-serve.mjs`);
+        throw new Error(`main.ts no longer references ${needle}; update scripts/esbuild-serve.mjs`);
       }
-      await writeFile(file, source.replaceAll(needle, './ai/worker.js'));
+      return { contents: source.replaceAll(needle, './ai/worker.js'), loader: 'ts' };
     });
   },
 };

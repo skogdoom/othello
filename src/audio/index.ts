@@ -2,8 +2,12 @@ import type { AudioPort, SoundName } from '../ports.js';
 
 const SOUNDS: readonly SoundName[] = ['place', 'flip', 'invalid', 'end'];
 
-/** Where a real clip would live. Dropping files in needs no code change. */
-const url = (name: SoundName): string => `/sounds/${name}.mp3`;
+/**
+ * Where a real clip would live. Dropping files in needs no code change.
+ * Relative to the page, not the domain root, so the game can be hosted from a
+ * subdirectory.
+ */
+const url = (name: SoundName): string => `sounds/${name}.mp3`;
 
 const MUTE_KEY = 'othello.mute';
 

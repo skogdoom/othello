@@ -13,13 +13,16 @@
     "bundle": "node scripts/esbuild-serve.mjs --build",
     "build": "npm run typecheck && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json",
-    "test": "vitest run"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.worker.json && tsc --noEmit -p tsconfig.e2e.json",
+    "test": "vitest run",
+    "e2e": "vite build && playwright test"
   },
   "dependencies": {
     "pixi.js": "^8.20.1"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@types/node": "^22.20.4",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
