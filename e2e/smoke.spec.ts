@@ -115,46 +115,56 @@ const LAYOUTS = [
   { width: 812, height: 265 },
 ];
 
+/**
+ * Everything the layout test checks, in one round trip. The page is busy
+ * drawing WebGL in software on a CI runner, and each separate query waits its
+ * turn; a query per control added up to most of the test's time budget.
+ */
+function measureLayout(page: Page) {
+  return page.evaluate(() => {
+    const box = (el: Element) => {
+      const r = el.getBoundingClientRect();
+      return { x: r.x, y: r.y, width: r.width, height: r.height };
+    };
+    const root = document.documentElement;
+    const hud = document.querySelector('#hud')!;
+    return {
+      pageFits: root.scrollWidth <= innerWidth && root.scrollHeight <= innerHeight,
+      stage: box(document.querySelector('#stage')!),
+      hud: box(hud),
+      // Nothing in the HUD is pushed out of it, or hidden behind a scroll.
+      hudFits: hud.scrollWidth <= hud.clientWidth + 1 && hud.scrollHeight <= hud.clientHeight + 1,
+      controls: [...hud.querySelectorAll('button, select')].map(box),
+    };
+  });
+}
+
 test('fits the viewport in both layouts with full-size tap targets', async ({ page }) => {
   await boot(page);
 
   for (const viewport of LAYOUTS) {
+    const at = `at ${viewport.width}x${viewport.height}`;
     await page.setViewportSize(viewport);
-    await expect
-      .poll(() =>
-        page.evaluate(() => ({
-          x: document.documentElement.scrollWidth <= innerWidth,
-          y: document.documentElement.scrollHeight <= innerHeight,
-        })),
-      )
-      .toEqual({ x: true, y: true });
+    // The ResizeObserver settles within a frame or two; wait for it.
+    await expect.poll(async () => (await measureLayout(page)).pageFits, at).toBe(true);
+    const { stage, hud, hudFits, controls } = await measureLayout(page);
 
-    const stage = (await page.locator('#stage').boundingBox())!;
-    const hud = (await page.locator('#hud').boundingBox())!;
     // A sidebar in landscape, a bottom bar in portrait.
     if (viewport.width > viewport.height) {
-      expect(hud.x).toBeGreaterThanOrEqual(stage.x + stage.width - 1);
+      expect(hud.x, at).toBeGreaterThanOrEqual(stage.x + stage.width - 1);
       // The sidebar costs the height-constrained board nothing.
-      expect(stage.width).toBeGreaterThanOrEqual(stage.height);
+      expect(stage.width, at).toBeGreaterThanOrEqual(stage.height);
     } else {
-      expect(hud.y).toBeGreaterThanOrEqual(stage.y + stage.height - 1);
+      expect(hud.y, at).toBeGreaterThanOrEqual(stage.y + stage.height - 1);
     }
-    // Nothing in the HUD is pushed out of it, or hidden behind a scroll.
-    const overflow = await page.locator('#hud').evaluate((el) => ({
-      x: el.scrollWidth <= el.clientWidth + 1,
-      y: el.scrollHeight <= el.clientHeight + 1,
-    }));
-    expect(overflow, `HUD overflows at ${viewport.width}x${viewport.height}`).toEqual({
-      x: true,
-      y: true,
-    });
+    expect(hudFits, `HUD overflows ${at}`).toBe(true);
 
-    for (const control of await page.locator('#hud button, #hud select').all()) {
-      const box = (await control.boundingBox())!;
-      expect(box.height).toBeGreaterThanOrEqual(44);
-      expect(box.x).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width).toBeLessThanOrEqual(viewport.width + 0.5);
-      expect(box.y + box.height).toBeLessThanOrEqual(viewport.height + 0.5);
+    expect(controls.length).toBe(4);
+    for (const control of controls) {
+      expect(control.height, at).toBeGreaterThanOrEqual(44);
+      expect(control.x, at).toBeGreaterThanOrEqual(0);
+      expect(control.x + control.width, at).toBeLessThanOrEqual(viewport.width + 0.5);
+      expect(control.y + control.height, at).toBeLessThanOrEqual(viewport.height + 0.5);
     }
   }
 });
