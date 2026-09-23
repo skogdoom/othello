@@ -87,6 +87,39 @@ describe('tweens', () => {
     expect(second).toBe(1);
   });
 
+  it('reports a change for every tick that moves something, and none while waiting', () => {
+    const ticker = new FakeTicker();
+    let changes = 0;
+    const tweens = new Tweens(ticker as unknown as Ticker, () => changes++);
+
+    tweens.add({ duration: 40, delay: 30, onUpdate: () => {} });
+    expect(changes).toBe(1); // the add itself asks for a frame
+
+    ticker.frame(20); // still inside the delay: nothing on screen moved
+    expect(changes).toBe(1);
+    ticker.frame(20);
+    expect(changes).toBe(2);
+    ticker.frame(40); // finishes
+    expect(changes).toBe(3);
+    expect(tweens.busy).toBe(false);
+
+    ticker.frame(20); // nothing running
+    expect(changes).toBe(3);
+  });
+
+  it('reports a change when snapping, and not when there was nothing to snap', () => {
+    const ticker = new FakeTicker();
+    let changes = 0;
+    const tweens = new Tweens(ticker as unknown as Ticker, () => changes++);
+
+    tweens.finishAll();
+    expect(changes).toBe(0);
+
+    tweens.add({ duration: 100, onUpdate: () => {} });
+    tweens.finishAll();
+    expect(changes).toBe(2);
+  });
+
   it('eases symmetrically about the halfway point', () => {
     expect(easeInOutQuad(0)).toBe(0);
     expect(easeInOutQuad(0.5)).toBeCloseTo(0.5, 5);
