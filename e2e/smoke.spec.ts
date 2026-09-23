@@ -104,11 +104,21 @@ test('resumes the game and the difficulty after a reload', async ({ page }) => {
   expect(errors).toEqual([]);
 });
 
+/**
+ * The 390 px portrait baseline, the same phone in landscape, and an iPhone 13
+ * mini in landscape with Safari's toolbar and tab bar showing, which leaves
+ * only 265 px of height.
+ */
+const LAYOUTS = [
+  { width: 390, height: 844 },
+  { width: 844, height: 390 },
+  { width: 812, height: 265 },
+];
+
 test('fits the viewport in both layouts with full-size tap targets', async ({ page }) => {
   await boot(page);
 
-  const portrait = { width: 390, height: 844 };
-  for (const viewport of [portrait, { width: portrait.height, height: portrait.width }]) {
+  for (const viewport of LAYOUTS) {
     await page.setViewportSize(viewport);
     await expect
       .poll(() =>
@@ -124,9 +134,20 @@ test('fits the viewport in both layouts with full-size tap targets', async ({ pa
     // A sidebar in landscape, a bottom bar in portrait.
     if (viewport.width > viewport.height) {
       expect(hud.x).toBeGreaterThanOrEqual(stage.x + stage.width - 1);
+      // The sidebar costs the height-constrained board nothing.
+      expect(stage.width).toBeGreaterThanOrEqual(stage.height);
     } else {
       expect(hud.y).toBeGreaterThanOrEqual(stage.y + stage.height - 1);
     }
+    // Nothing in the HUD is pushed out of it, or hidden behind a scroll.
+    const overflow = await page.locator('#hud').evaluate((el) => ({
+      x: el.scrollWidth <= el.clientWidth + 1,
+      y: el.scrollHeight <= el.clientHeight + 1,
+    }));
+    expect(overflow, `HUD overflows at ${viewport.width}x${viewport.height}`).toEqual({
+      x: true,
+      y: true,
+    });
 
     for (const control of await page.locator('#hud button, #hud select').all()) {
       const box = (await control.boundingBox())!;
