@@ -13,6 +13,13 @@ Attach a `ResizeObserver` to the stage element and size the renderer from the
 observed box. Do not compute available space from `window.innerWidth` minus an
 assumed HUD height.
 
+Render on demand, not on every tick. The board is static almost all the time,
+and Pixi's default loop redraws it 60 times a second anyway, which on a phone
+is GPU work and battery for nothing. Draw when the position, the hints or the
+size change, on every tick while a tween runs, and once more after a WebGL
+context is restored, since it comes back blank. Let the ticker stop once there
+is nothing to draw. A resize draws at once, because resizing clears the canvas.
+
 **Flip animation:** squash `scale.x` 1 → 0, swap colour at the zero crossing,
 then 0 → 1. Cascade flips with a per-disc delay proportional to distance from
 the placed disc. Total budget 250–350 ms including cascade. Keep the timing

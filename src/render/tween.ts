@@ -14,29 +14,39 @@ export const easeInOutQuad = (t: number): number =>
 /**
  * The whole animation system: a list of tweens stepped by Pixi's ticker. A
  * library would not earn its bundle size here.
+ *
+ * `onChange` fires whenever a tween is added, or moves something on screen —
+ * never for a tick spent waiting out a delay. The renderer draws on demand,
+ * so this is how it knows a frame is needed.
  */
 export class Tweens {
   private readonly running: Tween[] = [];
 
-  constructor(private readonly ticker: Ticker) {
+  constructor(
+    private readonly ticker: Ticker,
+    private readonly onChange: () => void = () => {},
+  ) {
     this.ticker.add(this.step);
   }
 
   private readonly step = (): void => {
     if (this.running.length === 0) return;
     const dt = this.ticker.deltaMS;
+    let changed = false;
 
     // Iterate over a copy: a completion callback may start the next tween.
     for (const tween of [...this.running]) {
       tween.elapsed += dt;
       const t = (tween.elapsed - tween.delay) / tween.duration;
       if (t < 0) continue;
+      changed = true;
       if (t >= 1) {
         this.finish(tween);
         continue;
       }
       tween.onUpdate(t);
     }
+    if (changed) this.onChange();
   };
 
   private finish(tween: Tween): void {
@@ -60,6 +70,7 @@ export class Tweens {
       onComplete: spec.onComplete,
       elapsed: 0,
     });
+    this.onChange();
   }
 
   get busy(): boolean {
@@ -71,10 +82,12 @@ export class Tweens {
    * interrupted flip must not leave a disc frozen at scale.x = 0.
    */
   finishAll(): void {
+    if (this.running.length === 0) return;
     let guard = 0;
     while (this.running.length > 0) {
       this.finish(this.running[0]!);
       if (++guard > 1000) throw new Error('Tween completion loop does not settle');
     }
+    this.onChange();
   }
 }

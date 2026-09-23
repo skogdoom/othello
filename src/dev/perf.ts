@@ -19,20 +19,26 @@ function kilo(n: number): string {
 
 /**
  * Dev-only overlay behind the `?perf` URL flag, for profiling on a real phone
- * where no devtools are attached: frame rate and frame times from the render
- * loop, and for every AI search the depth it reached, whether it solved the
- * game, and how its time compares to the level's budget. Those two numbers
- * are what decide whether the board representation needs to get faster.
- * Never imported unless the flag is present.
+ * where no devtools are attached: frame rate and frame times while something
+ * animates, the number of frames drawn, and for every AI search the depth it
+ * reached, whether it solved the game, and how its time compares to the
+ * level's budget. Those two numbers are what decide whether the board
+ * representation needs to get faster. Never imported unless the flag is
+ * present.
+ *
+ * The board draws on demand, so the loop only runs while something moves; a
+ * static board shows `idle`, and its frame count stays put.
  */
 export class PerfPanel {
   private readonly root: HTMLElement;
   private readonly frames: { at: number; dt: number }[] = [];
   private readonly searches: SearchStats[] = [];
   private longFrames = 0;
-  private last = performance.now();
 
-  constructor(private readonly app: Application) {
+  constructor(
+    private readonly app: Application,
+    private readonly frameCount: () => number,
+  ) {
     this.root = document.createElement('div');
     this.root.style.cssText = [
       'position:fixed',
@@ -52,10 +58,9 @@ export class PerfPanel {
     document.body.appendChild(this.root);
 
     app.ticker.add(this.tick);
-    // A backgrounded tab stops the render loop; the gap is not a slow frame.
+    // A backgrounded tab stops the loop; the gap is not a slow frame.
     document.addEventListener('visibilitychange', () => {
       this.frames.length = 0;
-      this.last = performance.now();
     });
     globalThis.setInterval(() => this.render(), 500);
     this.render();
@@ -69,23 +74,29 @@ export class PerfPanel {
 
   private readonly tick = (): void => {
     const now = performance.now();
-    const dt = now - this.last;
-    this.last = now;
+    // Measured by the ticker, which restarts its clock whenever the loop
+    // starts again, so the idle time between two animations is not a frame.
+    const dt = this.app.ticker.elapsedMS;
     if (dt >= LONG_FRAME_MS) this.longFrames++;
     this.frames.push({ at: now, dt });
-    while (this.frames.length > 0 && this.frames[0]!.at < now - WINDOW_MS) this.frames.shift();
   };
 
   private render(): void {
+    const now = performance.now();
+    while (this.frames.length > 0 && this.frames[0]!.at < now - WINDOW_MS) this.frames.shift();
     const dts = this.frames.map((f) => f.dt).sort((a, b) => a - b);
     const span = dts.reduce((sum, dt) => sum + dt, 0);
     const fps = span > 0 ? (dts.length * 1000) / span : 0;
+    const loop =
+      dts.length === 0
+        ? 'idle'
+        : `${fps.toFixed(0)} fps  p95 ${percentile(dts, 0.95).toFixed(1)} ms  ` +
+          `max ${(dts[dts.length - 1] ?? 0).toFixed(1)} ms`;
 
     const renderer = this.app.renderer;
     const canvas = this.app.canvas;
     const lines = [
-      `${fps.toFixed(0)} fps  p95 ${percentile(dts, 0.95).toFixed(1)} ms  ` +
-        `max ${(dts[dts.length - 1] ?? 0).toFixed(1)} ms  long ${this.longFrames}`,
+      `${loop}  long ${this.longFrames}  frames ${this.frameCount()}`,
       `${renderer.name}  dpr ${globalThis.devicePixelRatio}  res ${renderer.resolution}  ` +
         `${canvas.width}x${canvas.height}  cores ${navigator.hardwareConcurrency ?? '?'}`,
     ];

@@ -41,6 +41,49 @@ async function tapSquare(page: Page, square: number): Promise<void> {
   else await page.mouse.click(x, y);
 }
 
+type DrawCounter = () => Promise<number>;
+
+/**
+ * Counts WebGL draw calls, so a test can tell whether the board is drawing.
+ * Call before the page loads. A 2D-canvas fallback draws nothing through
+ * WebGL, so the count stays at zero there.
+ */
+async function countDraws(page: Page): Promise<DrawCounter> {
+  await page.addInitScript(() => {
+    const counter = window as unknown as { __draws: number };
+    counter.__draws = 0;
+    type Method = (...args: unknown[]) => unknown;
+    const names = ['drawElements', 'drawArrays', 'drawElementsInstanced', 'drawArraysInstanced'];
+    for (const proto of [WebGLRenderingContext.prototype, WebGL2RenderingContext.prototype]) {
+      const methods = proto as unknown as Record<string, Method | undefined>;
+      for (const name of names) {
+        const original = methods[name];
+        if (!original) continue;
+        methods[name] = function (this: unknown, ...args: unknown[]) {
+          counter.__draws++;
+          return original.apply(this, args);
+        };
+      }
+    }
+  });
+  return () => page.evaluate(() => (window as unknown as { __draws: number }).__draws);
+}
+
+/** Waits until nothing has been drawn for a moment, and returns the count. */
+async function settledDraws(page: Page, draws: DrawCounter): Promise<number> {
+  let last = await draws();
+  await expect
+    .poll(async () => {
+      await page.waitForTimeout(300);
+      const now = await draws();
+      const quiet = now === last;
+      last = now;
+      return quiet;
+    })
+    .toBe(true);
+  return last;
+}
+
 async function scores(page: Page): Promise<[number, number]> {
   const black = Number(await page.locator('#score-black b').textContent());
   const white = Number(await page.locator('#score-white b').textContent());
@@ -185,9 +228,28 @@ test('rotating during a search and a flip changes nothing but the layout', async
   expect(errors).toEqual([]);
 });
 
+test('draws nothing while the board is idle', async ({ page }) => {
+  const draws = await countDraws(page);
+  await boot(page);
+  const booted = await settledDraws(page, draws);
+  test.skip(booted === 0, 'this browser draws the board without WebGL');
+
+  await page.waitForTimeout(1000);
+  expect(await draws(), 'drew frames with nothing moving').toBe(booted);
+
+  // A move animates, and then the board goes quiet again.
+  await playOpeningExchange(page);
+  const played = await settledDraws(page, draws);
+  expect(played).toBeGreaterThan(booted);
+  await page.waitForTimeout(1000);
+  expect(await draws(), 'kept drawing after the move settled').toBe(played);
+});
+
 test('survives a lost and restored WebGL context', async ({ page }) => {
   const errors = collectErrors(page);
+  const draws = await countDraws(page);
   await boot(page);
+  const before = await settledDraws(page, draws);
 
   const lost = await page.evaluate(async () => {
     const canvas = document.querySelector<HTMLCanvasElement>('#stage canvas')!;
@@ -203,6 +265,9 @@ test('survives a lost and restored WebGL context', async ({ page }) => {
   });
   test.skip(!lost, 'this browser cannot simulate a context loss');
 
+  // Nothing on the board moved, so only the restore can have redrawn it: a
+  // restored context comes back blank.
+  await expect.poll(draws, 'the board was not redrawn after the restore').toBeGreaterThan(before);
   await playOpeningExchange(page);
   expect(errors).toEqual([]);
 });

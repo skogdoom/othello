@@ -144,7 +144,7 @@ if (params.has('aiDebug')) {
 }
 if (params.has('perf')) {
   const { PerfPanel } = await import('./dev/perf.js');
-  perfPanel = new PerfPanel(app);
+  perfPanel = new PerfPanel(app, () => renderer.frameCount);
 }
 
 // Decoding happens after the first frame: a missing clip must not hold up the

@@ -19,7 +19,8 @@ The browser tests cover: boot with no sound files and no console errors, a move
 and the AI's reply, undo, resume and difficulty after a reload, both HUD
 layouts at the 390 px baseline plus a 265 px-tall landscape (an iPhone 13 mini
 with Safari's tab bar showing), with 44 px tap targets and nothing overflowing,
-rotating during a search and a flip, a lost and restored WebGL context, the
+rotating during a search and a flip, no drawing at all while the board is
+idle, a lost and restored WebGL context redrawn with no input, the
 2D-canvas fallback when WebGL is unavailable, the main-thread fallback when
 the AI worker cannot load, and the error message when nothing can draw.
 
@@ -57,17 +58,21 @@ Add `?perf` to the URL (for example `https://…/othello/?perf`). A panel in the
 top-left corner shows:
 
 ```
-60 fps  p95 16.9 ms  max 18.2 ms  long 0
+60 fps  p95 16.9 ms  max 18.2 ms  long 0  frames 214
 webgl  dpr 3  res 2  780x1500  cores 6
 hard   12e  d16 solved  612/800 ms   94k 154k/s
 hard   14e  d11         803/800 ms  121k 150k/s
 medium 40e  d7          251/250 ms   38k 151k/s
 ```
 
-- **Line 1, the render loop.** Frame rate, 95th-percentile and worst frame
-  time over the last two seconds, and a running count of frames over 50 ms.
-  Watch it during flip cascades. `long` should stay at 0 once the board has
-  loaded.
+- **Line 1, the render loop.** The board draws on demand, so the loop runs
+  only while something animates. While it does, you see the frame rate and
+  the 95th-percentile and worst frame times over the last two seconds; the
+  rest of the time it says `idle`. `long` counts frames over 50 ms since
+  load; watch it during flip cascades, where it should stay at 0. `frames`
+  counts frames drawn since load. It must not climb while nothing moves.
+  A frame just after a WebGL context restore can be long while shaders
+  recompile. That one is expected.
 - **Line 2, the renderer.** `webgl` is expected. `canvas` means WebGL was
   unavailable and Pixi fell back to a 2D canvas. `res` is the capped device
   pixel ratio.

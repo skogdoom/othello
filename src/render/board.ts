@@ -1,4 +1,4 @@
-import { Container, Graphics, Rectangle } from 'pixi.js';
+import { Container, Graphics, Rectangle, UPDATE_PRIORITY } from 'pixi.js';
 import { BLACK, EMPTY, colOf, opponent, rowOf } from '../core/types.js';
 import { get } from '../core/board.js';
 import { CELL, THEME } from './theme.js';
@@ -40,17 +40,60 @@ export class BoardRenderer implements RendererPort {
   private lastMove: Square | null = null;
   private inputEnabled = false;
 
+  /** Something on the board changed since the last frame was drawn. */
+  private dirty = false;
+  private framesDrawn = 0;
+
   constructor(
     private readonly app: Application,
     private readonly onTap: (square: Square) => void,
   ) {
-    this.tweens = new Tweens(app.ticker);
+    this.tweens = new Tweens(app.ticker, () => this.invalidate());
     this.board.addChild(this.grid, this.discLayer, this.hintLayer, this.ring);
     this.board.eventMode = 'static';
     this.board.hitArea = new Rectangle(0, 0, THEME.boardSize, THEME.boardSize);
     this.board.on('pointertap', this.handleTap);
     this.app.stage.addChild(this.board);
+
+    // Draw on demand rather than on every tick: a static board needs no frames
+    // at all, and on a phone the default loop keeps the GPU busy for nothing.
+    // The ticker still steps the tweens, and stops once there is nothing left
+    // to draw. This runs after the tweens in each tick, so it draws their step.
+    app.ticker.remove(app.render, app);
+    app.ticker.add(this.frame, undefined, UPDATE_PRIORITY.LOW);
+    // A restored WebGL context comes back blank, and a page coming back from
+    // the background may have lost its canvas; nothing else would redraw them.
+    const canvas = app.canvas as HTMLCanvasElement;
+    canvas.addEventListener('webglcontextrestored', () => this.invalidate());
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) this.invalidate();
+    });
+
     this.drawGrid();
+    this.invalidate();
+  }
+
+  /** Frames drawn since boot, for `?perf`: an idle board does not add to it. */
+  get frameCount(): number {
+    return this.framesDrawn;
+  }
+
+  /** Marks the board as needing a frame, and makes sure one comes. */
+  private invalidate(): void {
+    this.dirty = true;
+    this.app.ticker.start(); // a no-op while it is already running
+  }
+
+  private readonly frame = (): void => {
+    if (this.dirty) this.draw();
+    // Nothing to draw and nothing animating: stop asking for frames.
+    else if (!this.tweens.busy) this.app.ticker.stop();
+  };
+
+  private draw(): void {
+    this.dirty = false;
+    this.app.render();
+    this.framesDrawn++;
   }
 
   /**
@@ -69,6 +112,9 @@ export class BoardRenderer implements RendererPort {
     const fit = fitBoard(w, h);
     this.board.scale.set(fit.scale);
     this.board.position.set(fit.x, fit.y);
+    // Resizing clears the canvas. Draw now, before the browser paints it
+    // blank, rather than on the next tick.
+    this.draw();
   }
 
   private readonly handleTap = (event: FederatedPointerEvent): void => {
@@ -147,6 +193,7 @@ export class BoardRenderer implements RendererPort {
     }
     this.drawHints();
     this.drawRing();
+    this.invalidate();
   }
 
   /**
@@ -207,6 +254,7 @@ export class BoardRenderer implements RendererPort {
   setHints(squares: readonly Square[]): void {
     this.hints = squares;
     this.drawHints();
+    this.invalidate();
   }
 
   private drawHints(): void {
